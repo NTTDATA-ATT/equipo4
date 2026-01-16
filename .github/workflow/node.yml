@@ -5,7 +5,7 @@ on:
     paths:
       - "**"
   push:
-    branches: ["feature"]
+    branches: ["feature/backend-nodejs"]
 
 jobs:
   test:
