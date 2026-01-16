@@ -2,7 +2,7 @@ name: Deploy to EC2 (Docker)
 
 on:
   push:
-    branches: ["main"]
+    branches: ["feature/backend-nodejs"]
   workflow_dispatch: {}
 
 jobs:
@@ -24,18 +24,18 @@ jobs:
       - name: Copy image to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          host: ${{ secrets.EQUIPO4_EC2_HOST }}
+          username: ${{ secrets.EQUIPO4_EC2_USER }}
+          key: ${{ secrets.EQUIPO4_EC2_SSH_KEY }}
           source: "image.tar"
           target: "/tmp"
 
       - name: Load & run on EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          host: ${{ secrets.EQUIPO4_EC2_HOST }}
+          username: ${{ secrets.EQUIPO4_EC2_USER }}
+          key: ${{ secrets.EQUIPO4_EC2_SSH_KEY }}
           script: |
             docker load < /tmp/image.tar
             docker rm -f mini-backend || true
