@@ -12,7 +12,9 @@ const now = () => new Date().toISOString();
 
 const invoices: Invoice[] = [
   { id: "INV-001", msisdn: "5512345678", amount: 199, status: "PENDING", createdAt: now() },
-  { id: "INV-002", msisdn: "5598765432", amount: 299, status: "PENDING", createdAt: now() }
+  { id: "INV-002", msisdn: "5598765432", amount: 299, status: "PENDING", createdAt: now() },
+  { id: "INV-003", msisdn: "5598765432", amount: 1, status: "PAID", createdAt: now() },
+  { id: "INV-004", msisdn: "5598765432", amount: 1, status: "PAID", createdAt: now() }
 ];
 
 export const InvoicesStore = {
