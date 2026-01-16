@@ -1,14 +1,37 @@
-name: Deploy to EC2 (Docker)
+name: Node CI/CD
 
 on:
+  pull_request:
+    paths:
+      - "**"
   push:
     branches: ["feature/backend-nodejs"]
   workflow_dispatch: {}
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+concurrency:
+  group: backend-node-${{ github.ref }}
+  cancel-in-progress: true
 
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -37,11 +60,16 @@ jobs:
           username: ${{ secrets.EQUIPO4_EC2_USER }}
           key: ${{ secrets.EQUIPO4_EC2_SSH_KEY }}
           script: |
+            set -e
             docker load < /tmp/image.tar
             docker rm -f mini-backend || true
-            docker run -d \
+            docker run -d --restart unless-stopped \
               --name mini-backend \
               -p 3000:3000 \
               -e APP_VERSION=${{ github.sha }} \
               mini-backend:${{ github.sha }}
+
+            # health check real
+            sleep 2
+            curl -fsS http://localhost:3000/health
             docker ps | grep mini-backend
