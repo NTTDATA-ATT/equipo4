@@ -5,7 +5,7 @@ on:
     paths:
       - "**"
   push:
-    branches: ["feature/*"]
+    branches: ["feature/clean-code"]
   workflow_dispatch: {}
 
 concurrency:
