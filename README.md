@@ -59,10 +59,10 @@ Pago
 Factura (PAID)
 
 Estructura del proyecto
-telco-billing-service-ts/
+name-project/
 ├── src/
-│   └── index.ts        # Todo el backend (API + lógica)
-├── .env.example        # Variables de entorno
+│   └── index.ts        
+├── .env.example       
 ├── package.json
 ├── tsconfig.json
 └── README.md
