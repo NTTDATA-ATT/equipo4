@@ -65,6 +65,7 @@ jobs:
             docker run -d --restart unless-stopped \
               --name mini-backend \
               -p 3000:3000 \
+              -e PORT=3000 \
               -e APP_VERSION=${{ github.sha }} \
               mini-backend:${{ github.sha }}
 
