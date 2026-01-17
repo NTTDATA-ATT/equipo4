@@ -1,10 +1,5 @@
 import "dotenv/config";
 import express from "express";
-import padStart from "lodash/padStart.js";
-import dayjs from "dayjs";
-import { v4 as uuidv4 } from "uuid";
-import axios from "axios";
-import { z } from "zod";
 
 type Currency = "MXN";
 type TelcoPackage = { id: string; name: string; priceCents: number; currency: Currency; validityDays: number };
@@ -32,46 +27,55 @@ const packages = new Map<string, TelcoPackage>([
 ]);
 const invoices = new Map<string, Invoice>();
 const payments = new Map<string, Payment>();
+
 let invoiceSeq = 1;
+let paymentSeq = 1;
 
 function nowIso(): string {
-  return dayjs().toISOString();
+  return new Date().toISOString();
 }
 
 function nextInvoiceId(): string {
-  const n = padStart(String(invoiceSeq++), 6, "0");
+  const n = String(invoiceSeq++).padStart(6, "0");
   return `INV-${n}`;
 }
 
-const createInvoiceSchema = z.object({
-  msisdn: z.string().regex(/^[0-9]{10,15}$/),
-  packageId: z.string().min(1),
-});
+function nextPaymentId(): string {
+  const n = String(paymentSeq++).padStart(6, "0");
+  return `PAY-${n}`;
+}
 
-const createPaymentSchema = z.object({
-  invoiceId: z.string().min(1),
-  method: z.enum(["CARD", "CASH", "TRANSFER"]).default("CARD"),
-});
+function isMsisdnValid(msisdn: unknown): msisdn is string {
+  return typeof msisdn === "string" && /^[0-9]{10,15}$/.test(msisdn);
+}
+
+function asNonEmptyString(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t ? t : null;
+}
+
+function isPaymentMethod(v: unknown): v is PaymentMethod {
+  return v === "CARD" || v === "CASH" || v === "TRANSFER";
+}
 
 const app = express();
 app.use(express.json());
 
-app.get("/health", async (_req, res) => {
-  const self = await axios.get(`http://127.0.0.1:${PORT}/_ping`).then(r => r.data).catch(() => ({ ok: false }));
-  res.json({ ok: true, self });
+app.get("/health", (_req, res) => {
+  res.json({ ok: true });
 });
-
-app.get("/_ping", (_req, res) => res.json({ ok: true }));
 
 app.get("/packages", (_req, res) => {
   res.json({ items: Array.from(packages.values()) });
 });
 
 app.post("/invoices", (req, res) => {
-  const parsed = createInvoiceSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "INVALID_INPUT", details: parsed.error.flatten() });
+  const msisdn = (req.body ?? {}).msisdn;
+  const packageId = asNonEmptyString((req.body ?? {}).packageId);
 
-  const { msisdn, packageId } = parsed.data;
+  if (!isMsisdnValid(msisdn)) return res.status(400).json({ error: "INVALID_MSISDN" });
+  if (!packageId) return res.status(400).json({ error: "INVALID_PACKAGE_ID" });
 
   const pkg = packages.get(packageId);
   if (!pkg) return res.status(404).json({ error: "PACKAGE_NOT_FOUND" });
@@ -94,17 +98,18 @@ app.post("/invoices", (req, res) => {
 });
 
 app.post("/payments", (req, res) => {
-  const parsed = createPaymentSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "INVALID_INPUT", details: parsed.error.flatten() });
+  const invoiceId = asNonEmptyString((req.body ?? {}).invoiceId);
+  const methodRaw = (req.body ?? {}).method;
 
-  const { invoiceId, method } = parsed.data;
+  if (!invoiceId) return res.status(400).json({ error: "INVOICE_ID_REQUIRED" });
+  const method: PaymentMethod = isPaymentMethod(methodRaw) ? methodRaw : "CARD";
 
   const inv = invoices.get(invoiceId);
   if (!inv) return res.status(404).json({ error: "INVOICE_NOT_FOUND" });
   if (inv.status === "PAID") return res.status(409).json({ error: "INVOICE_ALREADY_PAID" });
 
   const payment: Payment = {
-    id: uuidv4(),
+    id: nextPaymentId(),
     invoiceId: inv.id,
     method,
     status: method === "TRANSFER" ? "FAIL" : "OK",
@@ -124,5 +129,5 @@ app.post("/payments", (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`deps-innecesarias on :${PORT}`);
+  console.log(`deps-minimas on :${PORT}`);
 });
