@@ -1,34 +1,62 @@
 import { Router } from "express";
-import { InvoicesStore } from "../domain/invoices.store";
-import { assertPositiveAmount, isValidMsisdn } from "../domain/validators";
+import type { Store } from "../infra/store";
+import { Errors } from "../domain/errors";
+import { parsePaymentMethod, asNonEmptyString } from "../domain/validation";
+import { asyncHandler } from "../http/async-handler";
 
-export const paymentsRouter = Router();
+export function paymentsRouter(store: Store) {
+  const r = Router();
 
-paymentsRouter.post("/payments", (req, res) => {
-  const { invoiceId, msisdn, amount } = req.body ?? {};
+  r.post("/payments", asyncHandler(async (req, res) => {
+    const idempotencyKey = asNonEmptyString(req.header("Idempotency-Key") ?? undefined);
+    const invoiceIdRaw = (req.body ?? {}).invoiceId;
+    const invoiceId = asNonEmptyString(invoiceIdRaw);
+    if (!invoiceId) throw Errors.missingInvoiceId();
 
-  if (!invoiceId || typeof invoiceId !== "string") {
-    return res.status(400).json({ error: "invoiceId_required" });
-  }
-  if (!msisdn || typeof msisdn !== "string" || !isValidMsisdn(msisdn)) {
-    return res.status(400).json({ error: "msisdn_invalid" });
-  }
-  try {
-    assertPositiveAmount(Number(amount));
-  } catch {
-    return res.status(400).json({ error: "amount_invalid" });
-  }
+    // Idempotencia: replay
+    if (idempotencyKey) {
+      const existingPaymentId = store.idempotency.get(idempotencyKey);
+      if (existingPaymentId) {
+        const existingPayment = store.payments.get(existingPaymentId);
+        if (existingPayment) return res.status(200).json(existingPayment);
+      }
+    }
 
-  const inv = InvoicesStore.findById(invoiceId);
-  if (!inv) return res.status(404).json({ error: "INVOICE_NOT_FOUND" });
-  if (inv.msisdn !== msisdn) return res.status(409).json({ error: "MSISDN_MISMATCH" });
-  if (inv.amount !== Number(amount)) return res.status(409).json({ error: "AMOUNT_MISMATCH" });
+    const invoice = store.invoices.get(invoiceId);
+    if (!invoice) throw Errors.invoiceNotFound();
+    if (invoice.status === "PAID") throw Errors.invoiceAlreadyPaid();
 
-  try {
-    const result = InvoicesStore.pay(invoiceId);
-    return res.status(201).json(result);
-  } catch (e: any) {
-    if (e.message === "INVOICE_ALREADY_PAID") return res.status(409).json({ error: "INVOICE_ALREADY_PAID" });
-    return res.status(500).json({ error: "INTERNAL_ERROR" });
-  }
-});
+    const method = parsePaymentMethod((req.body ?? {}).method);
+
+    const payment = store.createPayment({
+      invoiceId: invoice.id,
+      amountCents: invoice.amountCents,
+      currency: invoice.currency,
+      method
+    });
+
+    store.payments.set(payment.id, payment);
+    if (idempotencyKey) store.idempotency.set(idempotencyKey, payment.id);
+
+    // Transición de estado (clara y única)
+    invoice.status = "PAID";
+    invoice.paidAt = payment.createdAt;
+    invoice.paymentId = payment.id;
+    invoice.updatedAt = payment.createdAt;
+
+    res.status(201).json(payment);
+  }));
+
+  r.get("/payments/:id", asyncHandler(async (req, res) => {
+    const payment = store.payments.get(req.params.id);
+    if (!payment) return res.status(404).json({ error: "PAYMENT_NOT_FOUND" });
+    res.json(payment);
+  }));
+
+  // debug (opcional)
+  r.get("/_debug/payments", asyncHandler(async (_req, res) => {
+    res.json({ items: Array.from(store.payments.values()) });
+  }));
+
+  return r;
+}

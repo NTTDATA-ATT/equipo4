@@ -1,33 +1,22 @@
 import express from "express";
-import { healthRouter } from "./routes/health.routes";
+import type { Store } from "./infra/store";
+import { packagesRouter } from "./routes/packages.routes";
 import { invoicesRouter } from "./routes/invoices.routes";
 import { paymentsRouter } from "./routes/payments.routes";
+import { errorMiddleware } from "./http/error-middleware";
 
-export function createApp() {
+export function buildApp(store: Store) {
   const app = express();
   app.use(express.json());
 
-  
-  app.use(healthRouter);
-  app.use("/api", invoicesRouter);
-  app.use("/api", paymentsRouter);
+  app.get("/health", (_req, res) => res.json({ ok: true }));
 
-  app.get("/api/version", (_req, res) => {
-    res.json({
-      name: "node-mini-backend",
-      version: process.env.APP_VERSION ?? "dev"
-    });
-  });
+  app.use(packagesRouter(store));
+  app.use(invoicesRouter(store));
+  app.use(paymentsRouter(store));
 
-  // 404
-  app.use((_req, res) => res.status(404).json({ error: "NOT_FOUND" }));
-
-  // error handler
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  app.use((err: any, _req: any, res: any, _next: any) => {
-    console.error(err);
-    res.status(500).json({ error: "INTERNAL_ERROR" });
-  });
+  // último middleware
+  app.use(errorMiddleware);
 
   return app;
 }
