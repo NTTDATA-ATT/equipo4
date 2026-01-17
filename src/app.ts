@@ -7,6 +7,7 @@ export function createApp() {
   const app = express();
   app.use(express.json());
 
+  
   app.use(healthRouter);
   app.use("/api", invoicesRouter);
   app.use("/api", paymentsRouter);
