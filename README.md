@@ -1,115 +1,150 @@
-### `src/app.ts`
-- Crea la aplicación Express.
-- Configura middlewares:
-  - `helmet()` para cabeceras de seguridad básicas.
-  - `express.json()` para parsear JSON.
-- Registra rutas:
-  - `/health`
-  - `/api/invoices`
-  - `/api/payments`
-  - `/api/version`
-- Incluye:
-  - handler 404
-  - handler global de errores
+# archivos-capacitacion-fullstack
+Repositorio para archivos a usar durante la capacitación full stack
 
-**Por qué existe**: separa la configuración del `listen()`, facilita testing con Supertest.
+Objetivo del proyecto
 
----
+Demostrar, de forma sencilla:
 
-### `src/server.ts`
-- Arranca el servidor con `app.listen(PORT)`.
-- Incluye **graceful shutdown** para `SIGTERM/SIGINT`:
-  - importante en Docker/EC2 cuando reinicias contenedores.
+Diseño de una API REST
 
-**Por qué existe**: en producción (Docker) el proceso debe terminar limpio.
+Flujo de facturación → pago
 
----
+Manejo de estados (PENDING → PAID)
 
-### `src/routes/health.ts`
-- Endpoint de salud:
-  - `GET /health` → `{ status: "ok" }`
+Uso de idempotencia en pagos (Idempotency-Key)
 
-**Por qué existe**:
-- Para validar rápidamente que el deploy funciona.
-- Útil para health checks.
+Tipado fuerte con TypeScript
 
----
+Arquitectura monolito simple (ideal para capacitación)
 
-### `src/routes/invoices.ts`
-- Maneja facturas en memoria (sin DB):
-  - `GET /api/invoices` → lista de facturas
-  - `GET /api/invoices/:id` → detalle de factura
+Arquitectura
+Tipo
 
-**Por qué existe**:
-- Provee datos simples para prácticas (queries, cambios, tests).
+Monolito
 
----
+Single service
 
-### `src/routes/payments.ts`
-- Simula un pago de factura:
-  - `POST /api/payments`
+REST API
 
-Valida:
-- `invoiceId` obligatorio
-- `msisdn` (teléfono) válido (10 dígitos en ejemplo)
-- `amount` positivo
-- que `msisdn` y `amount` coincidan con la factura
+Capas (en un solo archivo)
 
-Respuestas típicas:
-- `201` si paga correctamente
-- `400` si falta/está mal un campo
-- `404` si no existe la factura
-- `409` si hay mismatch o ya está pagada
+API / Controller – Express routes
 
-**Por qué existe**:
-- Es un endpoint con reglas de negocio mínimas para practicar:
-  - refactor
-  - tests
-  - manejo de errores
-  - cambios versionados por PR
+Lógica de negocio – validaciones, reglas, estados
 
----
+Persistencia (mock) – almacenamiento en memoria (Map)
 
-### `src/domain/store.ts`
-- “Persistencia” en memoria:
-  - Lista de facturas inicial
-  - Métodos:
-    - `list()`
-    - `find(id)`
-    - `pay(id)`
+No hay base de datos ni mensajería: es intencional para facilitar la práctica.
 
-**Por qué existe**:
-- Separa lógica de negocio/datos de las rutas.
-- Facilita refactor y testing.
+Flujo de negocio
 
----
+El cliente consulta paquetes disponibles
 
-### `src/domain/validators.ts`
-- Validadores pequeños y reutilizables:
-  - `isValidMsisdn()`
-  - `isPositiveNumber()`
+Crea una factura (PENDING)
 
-**Por qué existe**:
-- Buen ejemplo de separación de responsabilidades.
-- Cambios aquí impactan el API → ideal para pruebas.
+Paga la factura
 
----
+La factura cambia a estado PAID
 
-### `test/app.test.ts`
-Tests con **Jest + Supertest**:
-- `GET /health`
-- `GET /api/invoices`
-- `POST /api/payments` valida errores básicos
+El pago es idempotente (no se duplica)
 
-**Por qué existe**:
-- CI debe fallar si rompes comportamiento.
-- Los alumnos deben arreglar tests con PR.
+Cliente
+  ↓
+API REST
+  ↓
+Factura (PENDING)
+  ↓
+Pago
+  ↓
+Factura (PAID)
 
----
+Estructura del proyecto
+telco-billing-service-ts/
+├── src/
+│   └── index.ts        # Todo el backend (API + lógica)
+├── .env.example        # Variables de entorno
+├── package.json
+├── tsconfig.json
+└── README.md
 
-## 3) Endpoints del API
+Requisitos
 
-### Health
-- `GET /health`
-```json
-{ "status": "ok" }
+Node.js 20+
+
+npm
+
+Levantar el proyecto en local
+npm install
+cp .env.example .env
+npm run dev
+
+
+El servicio queda disponible en:
+
+http://localhost:8080
+
+Endpoints disponibles
+Health check
+GET /health
+
+Paquetes
+Listar paquetes
+GET /packages
+
+Obtener paquete por ID
+GET /packages/{packageId}
+
+
+Ejemplos de packageId:
+
+PKG-5GB
+
+PKG-10GB
+
+PKG-UNL
+
+Facturas
+Crear factura
+POST /invoices
+
+
+Body:
+
+{
+  "msisdn": "521234567890",
+  "packageId": "PKG-10GB"
+}
+
+
+Respuesta:
+
+{
+  "id": "INV-000001",
+  "status": "PENDING"
+}
+
+Consultar factura
+GET /invoices/{invoiceId}
+
+Pagos
+Pagar factura (idempotente)
+POST /payments
+
+
+Headers:
+
+Idempotency-Key: pago-001
+
+
+Body:
+
+{
+  "invoiceId": "INV-000001",
+  "method": "CARD"
+}
+
+
+Si ejecutas el mismo request con el mismo Idempotency-Key, no se crea un pago duplicado.
+
+Consultar pago
+GET /payments/{paymentId}
