@@ -1,0 +1,123 @@
+SRP (Single Responsibility)
+Broken
+
+src/index.ts: la clase BillingApi hace todo (rutas HTTP, validación, reglas de negocio, IDs, persistencia, auditoría, manejo de errores).
+
+Fixed (corrección)
+
+HTTP (rutas/Controllers): src/http/routes.ts
+
+Casos de uso (negocio):
+
+src/application/create-invoice.ts
+
+src/application/pay-invoice.ts
+
+src/application/list-packages.ts
+
+Persistencia (infra): src/adapters/inmemory/repos.ts
+
+Arranque e inyección (composition root): src/index.ts
+
+Errores centralizados: src/http/error-middleware.ts
+
+Qué cambió: se separaron responsabilidades en módulos pequeños con un propósito claro.
+
+OCP (Open/Closed)
+Broken
+
+BillingApi.gatewayFor() en src/index.ts usa switch(method) para elegir gateway.
+
+Para agregar un método nuevo, debes modificar ese switch.
+
+Fixed (corrección)
+
+Estrategias de pago: src/ports/payment-strategy.ts (interfaz)
+
+Implementaciones: src/adapters/payments/strategies.ts
+
+Selección sin switch: PayInvoice.strategyFor() en src/application/pay-invoice.ts
+
+Registro de estrategias: defaultPaymentStrategies() en src/adapters/payments/strategies.ts
+
+Qué cambió: para agregar un método nuevo, agregas una nueva clase Strategy y la registras, sin tocar el caso de uso.
+
+LSP (Liskov Substitution)
+Broken
+
+TransferGateway extends PaymentGateway en src/index.ts
+
+TransferGateway.charge() lanza excepción (rompe el contrato implícito: “retornar ok true/false”).
+
+Fixed (corrección)
+
+Se eliminó esa herencia peligrosa.
+
+Todas las estrategias cumplen el mismo contrato:
+
+charge() retorna Promise<{ ok: boolean }> en src/ports/payment-strategy.ts
+
+Ejemplo: TransferStrategy.charge() en src/adapters/payments/strategies.ts retorna { ok:false } en vez de lanzar.
+
+Qué cambió: cualquier estrategia se puede sustituir por otra sin romper expectativas del consumidor.
+
+ISP (Interface Segregation)
+Broken
+
+MegaRepository en src/index.ts es una “interfaz gorda” (packages + invoices + payments + audit).
+
+Fixed (corrección)
+
+Se dividió en interfaces pequeñas:
+
+src/ports/package-repo.ts
+
+src/ports/invoice-repo.ts
+
+src/ports/payment-repo.ts
+
+Implementaciones concretas:
+
+src/adapters/inmemory/repos.ts
+
+Qué cambió: cada cliente depende solo de lo que usa (interfaces pequeñas).
+
+DIP (Dependency Inversion)
+Broken
+
+La clase principal crea dependencias concretas adentro:
+
+new InMemoryMegaRepository()
+
+new TransferGateway() etc.
+
+El alto nivel depende de clases concretas.
+
+Fixed (corrección)
+
+Los casos de uso dependen de interfaces (ports):
+
+CreateInvoice depende de PackageRepository, InvoiceRepository, IdGenerator
+(src/application/create-invoice.ts)
+
+PayInvoice depende de InvoiceRepository, PaymentRepository, PaymentStrategy[], IdGenerator
+(src/application/pay-invoice.ts)
+
+Las implementaciones concretas se crean e inyectan en el composition root:
+
+src/index.ts arma repos in-memory + estrategias + usecases y los inyecta en rutas
+
+Qué cambió: el dominio/usecases no conoce Express ni “in-memory”, solo conoce interfaces.
+
+Manejo de errores (bonus, no es SOLID pero mejora práctica)
+Broken
+
+try/catch dentro de /pay, devuelve mensajes internos.
+
+Fixed
+
+Middleware centralizado: src/http/error-middleware.ts
+
+Wrapper async: src/http/async-handler.ts
+
+Errores tipados: src/domain/errors.ts
