@@ -1,0 +1,75 @@
+name: Node CI/CD
+
+on:
+  pull_request:
+    paths:
+      - "**"
+  push:
+    branches: ["feature/*"]
+  workflow_dispatch: {}
+
+concurrency:
+  group: backend-node-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version
+        run: echo "APP_VERSION=${GITHUB_SHA}" >> $GITHUB_ENV
+
+      - name: Build Docker image
+        run: docker build -t mini-backend:${{ github.sha }} .
+
+      - name: Save image tar
+        run: docker save mini-backend:${{ github.sha }} > image.tar
+
+      - name: Copy image to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EQUIPO4_EC2_HOST }}
+          username: ${{ secrets.EQUIPO4_EC2_USER }}
+          key: ${{ secrets.EQUIPO4_EC2_SSH_KEY }}
+          source: "image.tar"
+          target: "/tmp"
+
+      - name: Load & run on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EQUIPO4_EC2_HOST }}
+          username: ${{ secrets.EQUIPO4_EC2_USER }}
+          key: ${{ secrets.EQUIPO4_EC2_SSH_KEY }}
+          script: |
+            set -e
+            docker load < /tmp/image.tar
+            docker rm -f mini-backend || true
+            docker run -d --restart unless-stopped \
+              --name mini-backend \
+              -p 3000:3000 \
+              -e APP_VERSION=${{ github.sha }} \
+              mini-backend:${{ github.sha }}
+
+            # health check real
+            sleep 2
+            curl -fsS http://localhost:3000/health
+            docker ps | grep mini-backend
