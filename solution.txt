@@ -1,0 +1,47 @@
+Qué está mal en la versión “errores-malos”
+
+Archivo principal: src/index.ts
+
+Problemas intencionales para la práctica:
+
+No existe middleware centralizado de errores.
+
+Hay throw en handlers sync y async → requests colgadas / proceso inestable.
+
+Handler async sin wrapper → errores async no se enrutan a Express correctamente.
+
+Respuestas inconsistentes (a veces 200 con error, a veces 500 con texto).
+
+Filtra detalles internos (mensajes tipo GatewayError...).
+
+Mapeo incorrecto de HTTP status (404/409 terminan como 500 o 200).
+
+try/catch repetido (cuando se usa), no hay contrato único.
+
+Qué se corrigió en “errores-buenos”
+
+Archivos clave:
+
+src/http.ts
+
+asyncHandler() para capturar errores en rutas async
+
+errorMiddleware centralizado: transforma errores en respuestas consistentes
+
+src/errors.ts
+
+AppError con code + status
+
+fábrica Errors (INVALID_MSISDN, PACKAGE_NOT_FOUND, etc.)
+
+src/validation.ts
+
+validación simple y reusable (sin duplicación)
+
+src/index.ts
+
+rutas usan asyncHandler(...)
+
+al final app.use(errorMiddleware)
+
+Contrato de error consistente (ejemplo):

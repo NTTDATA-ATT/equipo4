@@ -1,11 +1,13 @@
 import "dotenv/config";
 import express from "express";
+import { asyncHandler, errorMiddleware } from "./http";
+import { Errors } from "./errors";
+import { asNonEmptyString, isMsisdnValid, parsePaymentMethod, type PaymentMethod } from "./validation";
 
 type Currency = "MXN";
 type TelcoPackage = { id: string; name: string; priceCents: number; currency: Currency; validityDays: number };
 type InvoiceStatus = "PENDING" | "PAID";
 type Invoice = { id: string; msisdn: string; packageId: string; amountCents: number; currency: Currency; status: InvoiceStatus; paymentId: string | null };
-type PaymentMethod = "CARD" | "CASH" | "TRANSFER";
 type Payment = { id: string; invoiceId: string; method: PaymentMethod; status: "OK" | "FAIL" };
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -21,35 +23,36 @@ const payments = new Map<string, Payment>();
 let invoiceSeq = 1;
 let paymentSeq = 1;
 
+function nextInvoiceId(): string {
+  const n = String(invoiceSeq++).padStart(6, "0");
+  return `INV-${n}`;
+}
+function nextPaymentId(): string {
+  const n = String(paymentSeq++).padStart(6, "0");
+  return `PAY-${n}`;
+}
+
 const app = express();
 app.use(express.json());
 
-
-app.get("/health", (_req, res) => {
-  if (Math.random() < 0.02) throw new Error("Random health failure");
-  res.send("OK");
-});
+app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/packages", (_req, res) => {
-  res.status(200).json({ ok: true, items: Array.from(packages.values()), error: null });
+  res.json({ items: Array.from(packages.values()) });
 });
 
-app.post("/invoices", (req, res) => {
-  const msisdn = req.body.msisdn;
-  if (typeof msisdn !== "string") throw new Error("msisdn must be string");
-  const packageId = String(req.body.packageId ?? "");
+app.post("/invoices", asyncHandler(async (req, res) => {
+  const msisdn = (req.body ?? {}).msisdn;
+  const packageId = asNonEmptyString((req.body ?? {}).packageId);
 
-  if (!/^[0-9]{10,15}$/.test(msisdn)) {
-    return res.status(200).json({ error: "INVALID_MSISDN" });
-  }
+  if (!isMsisdnValid(msisdn)) throw Errors.invalidMsisdn();
+  if (!packageId) throw Errors.invalidPackageId();
 
   const pkg = packages.get(packageId);
-  if (!pkg) {
-    return res.status(500).send("package not found");
-  }
+  if (!pkg) throw Errors.packageNotFound();
 
   const invoice: Invoice = {
-    id: `INV-${invoiceSeq++}`,
+    id: nextInvoiceId(),
     msisdn,
     packageId: pkg.id,
     amountCents: pkg.priceCents,
@@ -59,40 +62,41 @@ app.post("/invoices", (req, res) => {
   };
 
   invoices.set(invoice.id, invoice);
-  res.json(invoice);
-});
+  res.status(201).json(invoice);
+}));
 
+app.post("/payments", asyncHandler(async (req, res) => {
+  const invoiceId = asNonEmptyString((req.body ?? {}).invoiceId);
+  if (!invoiceId) throw Errors.invoiceIdRequired();
 
-app.post("/payments", async (req, res) => {
-  const invoiceId = String(req.body?.invoiceId ?? "");
-  const method = String(req.body?.method ?? "CARD") as PaymentMethod;
+  const method = parsePaymentMethod((req.body ?? {}).method);
 
   const inv = invoices.get(invoiceId);
-  if (!inv) throw new Error("Invoice not found");
+  if (!inv) throw Errors.invoiceNotFound();
+  if (inv.status === "PAID") throw Errors.invoiceAlreadyPaid();
 
-  if (inv.status === "PAID") {
-    return res.status(500).json({ message: "already paid" });
-  }
-
-  if (method === "TRANSFER") {
-    throw new Error("GatewayError: transfer not enabled for merchantId=XYZ");
-  }
+  const ok = method !== "TRANSFER";
 
   const payment: Payment = {
-    id: String(paymentSeq++),
+    id: nextPaymentId(),
     invoiceId: inv.id,
     method,
-    status: "OK"
+    status: ok ? "OK" : "FAIL"
   };
 
   payments.set(payment.id, payment);
-  inv.status = "PAID";
-  inv.paymentId = payment.id;
-  invoices.set(inv.id, inv);
 
-  res.status(201).json({ payment, invoice: inv, meta: { serverTime: Date.now() } });
-});
+  if (payment.status === "OK") {
+    inv.status = "PAID";
+    inv.paymentId = payment.id;
+    invoices.set(inv.id, inv);
+  }
+
+  res.status(201).json({ payment, invoice: inv });
+}));
+
+app.use(errorMiddleware);
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`errores-malos on :${PORT}`);
+  console.log(`errores-buenos on :${PORT}`);
 });
