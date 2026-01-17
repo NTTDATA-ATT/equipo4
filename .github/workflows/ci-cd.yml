@@ -5,7 +5,7 @@ on:
     paths:
       - "**"
   push:
-    branches: ["feature/backend-nodejs"]
+    branches: ["feature/*"]
   workflow_dispatch: {}
 
 concurrency:
