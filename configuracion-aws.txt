@@ -1,0 +1,20 @@
+PASOS PARA AMBIENTAR WORKSPACES A UN AD SIMPLE AWS
+
+1- Correstes terraform foundations
+2- Corres terraform 02-Infraestructure
+3- Corres terrfaorm 02-ec2-para agreagar usuarios al dominio
+4- Accedes ala ec2 con el usuario administrador
+5- Cambias el adapatador de red - propiedases ipv4- agregas las ip del directory de aws
+6- Agregas la maquina la dominio y reinicias
+7- Entras de nuevo a la maquina con el nombredeldomino.local/administrataro
+8-la contraseña para el administator del dominio es la que se puso en la variable de password en el terraform 02-ec2-
+9- Una vez adentro agregagos las tools del server manager en el powershell con el comando Install-WindowsFeature RSAT-ADDS-Tools
+10- una vez instalado te vas a la opcion de server manager - tools- agregar usuarios
+11- Una vez agregado los usuarios se eleminan la ec2
+12- Ejecutamos el terraform 03-wokspace, con los usuairos creados en la ec2
+13- Asignamos los permisos para acceso por web, se hace un archivo json para aejecutar el comando 
+aws workspaces modify-workspace-access-properties `
+  --region us-east-1 `
+  --resource-id d-90661c459d `
+  --workspace-access-properties file://web-access.json `
+  --profile jc02
